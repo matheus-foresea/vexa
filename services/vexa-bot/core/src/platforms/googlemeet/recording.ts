@@ -70,10 +70,10 @@ export async function startGoogleRecording(page: Page, botConfig: BotConfig): Pr
         platform: "gmeet",
         timesliceMs: 30000,
         startBrowserCapture: async (page, timesliceMs) => {
-          const wantsVideo = Array.isArray(botConfig.captureModes) && botConfig.captureModes.includes("video");
-          await page.evaluate(async ({ timesliceMs, wantsVideo }) => {
+          // Vídeo via Xvfb+ffmpeg server-side (Vexa upstream com video:true).
+          await page.evaluate(async ({ timesliceMs }) => {
             const u = (window as any).VexaBrowserUtils;
-            (window as any).logBot(`[Google Recording] Browser utils available: ${Object.keys(u || {}).join(', ')} — captureVideo=${wantsVideo}`);
+            (window as any).logBot(`[Google Recording] Browser utils available: ${Object.keys(u || {}).join(', ')}`);
 
             const audioService = new u.BrowserAudioService({
               targetSampleRate: 16000,
@@ -98,16 +98,14 @@ export async function startGoogleRecording(page: Page, botConfig: BotConfig): Pr
               return;
             }
 
-            const combinedStream: MediaStream = wantsVideo
-              ? await audioService.createCombinedAudioVideoStream(mediaElements)
-              : await audioService.createCombinedAudioStream(mediaElements);
+            const combinedStream: MediaStream = await audioService.createCombinedAudioStream(mediaElements);
 
-            // Spin up the unified browser-side MediaRecorder pipeline.
+            // Spin up the unified browser-side MediaRecorder pipeline (audio-only).
+            // Video é gravado por Xvfb+ffmpeg server-side, fora desse pipeline.
             const pipeline = new u.BrowserMediaRecorderPipeline({
               stream: combinedStream,
               timesliceMs,
               chunkCallback: (window as any).__vexaSaveRecordingChunk,
-              captureVideo: wantsVideo,
             });
             (window as any).__vexaMediaRecorderPipeline = pipeline;
             // Keep __vexaMediaRecorder pointing at the underlying MediaRecorder
@@ -142,7 +140,7 @@ export async function startGoogleRecording(page: Page, botConfig: BotConfig): Pr
                 } catch {}
               });
             }
-          }, { timesliceMs, wantsVideo });
+          }, { timesliceMs });
         },
         stopBrowserCapture: async (page) => {
           await page.evaluate(async () => {
