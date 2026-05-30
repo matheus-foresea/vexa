@@ -343,6 +343,13 @@ export interface BrowserMediaRecorderPipelineOptions {
     isFinal: boolean;
     mimeType: string;
   }) => Promise<boolean>;
+  /**
+   * If true, picks video/webm mimeType so MediaRecorder encodes audio+video.
+   * Caller must provide a MediaStream containing both audio AND video tracks
+   * (otherwise MediaRecorder will produce a video file with empty/black video).
+   * Default false — pure audio (legacy behavior, unchanged).
+   */
+  captureVideo?: boolean;
 }
 
 export class BrowserMediaRecorderPipeline {
@@ -372,12 +379,23 @@ export class BrowserMediaRecorderPipeline {
 
     // Pick the best supported MediaRecorder mimeType. No fallback beyond the
     // candidate list — if none of these work, we log and refuse.
-    const candidates = [
-      "audio/webm;codecs=opus",
-      "audio/webm",
-      "audio/ogg;codecs=opus",
-      "audio/ogg",
-    ];
+    // When opts.captureVideo=true, prefer video containers (audio is muxed
+    // alongside video in the same WebM). Caller is responsible for providing
+    // a MediaStream that actually contains video tracks.
+    const candidates = this.opts.captureVideo
+      ? [
+          "video/webm;codecs=vp9,opus",
+          "video/webm;codecs=vp8,opus",
+          "video/webm;codecs=h264,opus",
+          "video/webm",
+          "video/mp4;codecs=h264,aac",
+        ]
+      : [
+          "audio/webm;codecs=opus",
+          "audio/webm",
+          "audio/ogg;codecs=opus",
+          "audio/ogg",
+        ];
     let chosen = "";
     for (const mime of candidates) {
       try {
