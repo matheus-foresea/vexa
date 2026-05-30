@@ -74,9 +74,12 @@ export async function startTeamsRecording(page: Page, botConfig: BotConfig): Pro
         platform: "teams",
         timesliceMs: 30000,
         startBrowserCapture: async (page, timesliceMs) => {
-          await page.evaluate(async ({ timesliceMs }) => {
+          // Pass captureVideo flag from Node into browser context (page.evaluate
+          // cannot reach botConfig directly — must be marshalled).
+          const wantsVideo = Array.isArray(botConfig.captureModes) && botConfig.captureModes.includes("video");
+          await page.evaluate(async ({ timesliceMs, wantsVideo }) => {
             const u = (window as any).VexaBrowserUtils;
-            (window as any).logBot(`[Teams Recording] Browser utils available: ${Object.keys(u || {}).join(', ')}`);
+            (window as any).logBot(`[Teams Recording] Browser utils available: ${Object.keys(u || {}).join(', ')} — captureVideo=${wantsVideo}`);
 
             const audioService = new u.BrowserAudioService({
               targetSampleRate: 16000,
@@ -97,13 +100,19 @@ export async function startTeamsRecording(page: Page, botConfig: BotConfig): Pro
               return;
             }
 
-            const combinedStream: MediaStream = await audioService.createCombinedAudioStream(mediaElements);
+            // Pick the right combined stream: audio-only (legacy) or audio+video.
+            // When wantsVideo=true but no video tracks found, helper logs WARN
+            // and falls back to audio-only — recording still works, just no video.
+            const combinedStream: MediaStream = wantsVideo
+              ? await audioService.createCombinedAudioVideoStream(mediaElements)
+              : await audioService.createCombinedAudioStream(mediaElements);
 
             // Spin up the unified browser-side MediaRecorder pipeline.
             const pipeline = new u.BrowserMediaRecorderPipeline({
               stream: combinedStream,
               timesliceMs,
               chunkCallback: (window as any).__vexaSaveRecordingChunk,
+              captureVideo: wantsVideo,
             });
             (window as any).__vexaMediaRecorderPipeline = pipeline;
             // Keep __vexaMediaRecorder pointing at the underlying MediaRecorder
@@ -137,7 +146,7 @@ export async function startTeamsRecording(page: Page, botConfig: BotConfig): Pro
                 } catch {}
               });
             }
-          }, { timesliceMs });
+          }, { timesliceMs, wantsVideo });
         },
         stopBrowserCapture: async (page) => {
           await page.evaluate(async () => {

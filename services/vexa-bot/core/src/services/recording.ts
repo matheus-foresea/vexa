@@ -241,7 +241,12 @@ export class RecordingService {
     parts.push(Buffer.from('\r\n'));
     parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="chunk_seq"\r\n\r\n${chunkSeq}\r\n`));
     parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="is_final"\r\n\r\n${isFinal ? 'true' : 'false'}\r\n`));
-    parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="recording.${chunkSeq}.${format}"\r\nContent-Type: audio/${format}\r\n\r\n`));
+    // Content-Type derivado do format: webm pode ser audio OU video conforme
+    // o que MediaRecorder produziu (captureModes inclui 'video' → video/webm).
+    // mp4 = video; wav/mp3/ogg = audio. Server-side normaliza tudo via format
+    // string no metadata JSON — Content-Type aqui é só pra debug/proxy.
+    const mediaTopType = (format === "webm" || format === "mp4") ? "video" : "audio";
+    parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="recording.${chunkSeq}.${format}"\r\nContent-Type: ${mediaTopType}/${format}\r\n\r\n`));
     parts.push(chunkData);
     parts.push(Buffer.from(`\r\n--${boundary}--\r\n`));
 
