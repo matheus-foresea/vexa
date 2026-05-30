@@ -170,6 +170,60 @@ export class AudioService {
   }
 
   /**
+   * Combine audio + video tracks from media elements into a single MediaStream
+   * suitable for MediaRecorder with video/webm mimeType (BotConfig.captureModes
+   * includes "video").
+   *
+   * Strategy: audio tracks go through AudioContext mixer (same as audio-only
+   * path — multi-source mix). Video tracks come from the FIRST <video> element
+   * found with video tracks (typical Teams/Meet layout: one large active-speaker
+   * video element + audio elements per participant). Selecting "first" matches
+   * what a human observer sees as the dominant speaker view; a future
+   * enhancement could use a canvas to composite multiple participants into
+   * a grid layout (like Attendee does for gallery view).
+   *
+   * Returns the destinationNode.stream WITH added video tracks. Caller (browser
+   * pipeline) feeds this directly to MediaRecorder with video/webm mimeType.
+   */
+  async createCombinedAudioVideoStream(mediaElements: HTMLMediaElement[]): Promise<MediaStream> {
+    const audioOnly = await this.createCombinedAudioStream(mediaElements);
+
+    let videoTracksAdded = 0;
+    for (const element of mediaElements) {
+      try {
+        const elementStream =
+          (element as any).srcObject ||
+          ((element as any).captureStream && (element as any).captureStream()) ||
+          ((element as any).mozCaptureStream && (element as any).mozCaptureStream());
+
+        if (elementStream instanceof MediaStream) {
+          const videoTracks = elementStream.getVideoTracks();
+          if (videoTracks.length > 0) {
+            for (const track of videoTracks) {
+              audioOnly.addTrack(track);
+              videoTracksAdded++;
+            }
+            // Take video from the first element that has it — avoids muxing
+            // multiple simultaneous video tracks (MediaRecorder doesn't support
+            // multi-video). Future: composite via canvas for gallery view.
+            break;
+          }
+        }
+      } catch (error: any) {
+        log(`[Video] Could not extract video track: ${error.message}`);
+      }
+    }
+
+    if (videoTracksAdded === 0) {
+      log("[Video] WARN: captureModes requested video but no video tracks found on media elements; recording will be audio-only");
+    } else {
+      log(`[Video] Added ${videoTracksAdded} video track(s) to combined stream.`);
+    }
+
+    return audioOnly;
+  }
+
+  /**
    * Initialize audio processing pipeline
    */
   async initializeAudioProcessor(combinedStream: MediaStream): Promise<AudioProcessor> {
